@@ -86,16 +86,14 @@ class QlikAutomation:
         if tenants:
             selected_tenant = self._select(tenants, tenant_name, "tenant")
             await page.get_by_role("button").filter(has_text=selected_tenant["name"]).first.click()
-            await page.get_by_test_id(
-                "nav-menu.analytics_creation.prepare_data_home"
-            ).wait_for(state="visible", timeout=60_000)
+            await self._wait_for_prepare_data_entry(page)
         else:
             selected_tenant = {
                 "name": tenant_name or "tenant actual",
                 "hostname": page.url.split("/")[2] if "://" in page.url else page.url,
             }
 
-        await page.get_by_test_id("nav-menu.analytics_creation.prepare_data_home").click()
+        await self._open_prepare_data(page)
         await page.wait_for_load_state("load", timeout=60_000)
         await page.get_by_test_id("browser-space-filter-btn").click()
         space_item = page.get_by_test_id(f"space-menu-item-{space_name}")
@@ -165,10 +163,34 @@ class QlikAutomation:
         await page.wait_for_load_state("load", timeout=60_000)
         login = page.get_by_label(re.compile("email", re.IGNORECASE))
         tenant = page.get_by_text(re.compile("choose tenant|selecciona.*tenant", re.IGNORECASE))
-        prepare_data = page.get_by_test_id("nav-menu.analytics_creation.prepare_data_home")
+        prepare_data = QlikAutomation._prepare_data_locator(page)
         await login.or_(tenant).or_(prepare_data).first.wait_for(
             state="visible", timeout=60_000
         )
+
+    @staticmethod
+    def _prepare_data_locator(page: Page) -> Any:
+        test_id_link = page.get_by_test_id("nav-menu.analytics_creation.prepare_data_home")
+        text_link = page.get_by_role(
+            "link", name=re.compile("preparar datos|prepare data", re.IGNORECASE)
+        )
+        return test_id_link.or_(text_link).first
+
+    async def _wait_for_prepare_data_entry(self, page: Page) -> None:
+        try:
+            await self._prepare_data_locator(page).wait_for(state="visible", timeout=20_000)
+        except PlaywrightTimeoutError:
+            await page.goto(urljoin(page.url, "/analytics/prepare"), wait_until="domcontentloaded")
+            await page.wait_for_load_state("load", timeout=60_000)
+
+    async def _open_prepare_data(self, page: Page) -> None:
+        try:
+            locator = self._prepare_data_locator(page)
+            await locator.wait_for(state="visible", timeout=20_000)
+            await locator.click()
+        except PlaywrightTimeoutError:
+            await page.goto(urljoin(page.url, "/analytics/prepare"), wait_until="domcontentloaded")
+            await page.wait_for_load_state("load", timeout=60_000)
 
     @staticmethod
     async def _wait_for_authenticated_page(page: Page) -> None:
