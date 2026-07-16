@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.*
+!.env.example
+artifacts/
+downloads/
+playwright/.auth/
+test-results/
+playwright-report/
+coverage/
+*.log
