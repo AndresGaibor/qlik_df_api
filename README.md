@@ -75,6 +75,36 @@ incorporar Alembic sin cambiar los repositorios ni los casos de uso.
 Las pruebas E2E reales de Qlik deben ejecutarse solo con una cuenta autorizada
 y un `.env` local que no se versiona.
 
+## Servidor remoto de dataflows
+
+En el servidor remoto configura `remote_server/.env`:
+
+```env
+REMOTE_API_KEY=una-clave-larga-y-aleatoria
+REMOTE_CSV_PATH=data/dataflows.csv
+```
+
+Levántalo con:
+
+```bash
+.venv/bin/uvicorn remote_server.main:app --host 0.0.0.0 --port 8001
+```
+
+En el `.env` del Mac configura la URL y la misma clave:
+
+```env
+REMOTE_API_URL=https://tu-servidor.example.com:8001
+REMOTE_API_KEY=una-clave-larga-y-aleatoria
+```
+
+Después de descargar y procesar todos los JSON, el Mac ejecuta un `PUT` único
+que reemplaza completamente el CSV remoto. El servidor consulta los datos con:
+
+```bash
+curl -H "X-API-Key: una-clave-larga-y-aleatoria" \
+  https://tu-servidor.example.com:8001/api/v1/dataflows
+```
+
 ## Ejecutar desde Python
 
 Con la API levantada, reemplaza `curl` por:

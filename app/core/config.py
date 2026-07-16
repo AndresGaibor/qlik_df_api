@@ -45,6 +45,12 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("QLIK_STORAGE_STATE", "qlik_storage_state"),
     )
+    remote_api_url: str | None = Field(
+        default=None, validation_alias=AliasChoices("REMOTE_API_URL", "remote_api_url")
+    )
+    remote_api_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("REMOTE_API_KEY", "remote_api_key")
+    )
 
     @model_validator(mode="after")
     def normalize_database_url(self) -> "Settings":

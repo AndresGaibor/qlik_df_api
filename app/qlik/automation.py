@@ -1,6 +1,7 @@
 import json
 import re
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
 
@@ -8,6 +9,8 @@ from playwright.async_api import Page, async_playwright
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from app.core.config import Settings
+from app.qlik.processor import procesar_dataflow
+from app.remote.client import reemplazar_dataflows
 
 
 class QlikAutomationError(RuntimeError):
@@ -118,6 +121,19 @@ class QlikAutomation:
                 await self._download_current_dataflow(page, download_dir, dataflow["name"])
             )
 
+        remote_count = None
+        if self.settings.remote_api_url and self.settings.remote_api_key:
+            records = [
+                record
+                for downloaded_file in downloaded_files
+                for record in procesar_dataflow(Path(downloaded_file))
+            ]
+            remote_count = await reemplazar_dataflows(
+                self.settings.remote_api_url,
+                self.settings.remote_api_key.get_secret_value(),
+                records,
+            )
+
         return {
             "tenants": tenants,
             "selected_tenant": selected_tenant,
@@ -125,6 +141,7 @@ class QlikAutomation:
             "dataflows": dataflows,
             "selected_dataflows": selected_dataflows,
             "downloaded_files": downloaded_files,
+            "remote_records_replaced": remote_count,
             "completed_at": datetime.now(UTC).isoformat(),
         }
 
