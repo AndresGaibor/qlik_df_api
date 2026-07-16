@@ -70,3 +70,20 @@ incorporar Alembic sin cambiar los repositorios ni los casos de uso.
 
 Las pruebas E2E reales de Qlik deben ejecutarse solo con una cuenta autorizada
 y un `.env` local que no se versiona.
+
+## Ejecutar desde Python
+
+Con la API levantada, reemplaza `curl` por:
+
+```bash
+.venv/bin/python -m app.client
+```
+
+Esto exporta todos los dataflows. Para seleccionar uno:
+
+```bash
+.venv/bin/python -m app.client --dataflow "Prueba de conexion S3"
+```
+
+Opciones disponibles: `--api-url`, `--tenant`, `--space`, `--dataflow` y
+`--headless`.
