@@ -8,4 +8,12 @@ playwright/.auth/
 test-results/
 playwright-report/
 coverage/
+.coverage
+*.egg-info/
 *.log
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.sqlite3
+*.db
