@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy import select
 
@@ -34,8 +36,11 @@ async def create_qlik_run(request: Request, payload: QlikRunRequest) -> ApiRespo
             run.status = "completed"
             run.tenant_name = result["selected_tenant"]["name"]
             run.space_name = result["space"]["name"]
-            run.dataflow_name = result["selected_dataflow"]["name"]
-            run.downloaded_file = result["downloaded_file"]
+            selected_dataflows = result["selected_dataflows"]
+            run.dataflow_name = (
+                selected_dataflows[0]["name"] if len(selected_dataflows) == 1 else None
+            )
+            run.downloaded_files = json.dumps(result["downloaded_files"])
         except (ValueError, QlikAutomationError) as error:
             run.status = "failed"
             run.error = str(error)

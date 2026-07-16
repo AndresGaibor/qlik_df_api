@@ -33,12 +33,14 @@ Ejemplo de ejecucion:
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/qlik/runs \
   -H 'Content-Type: application/json' \
-  -d '{"space":"Bancolombia prueba","dataflow":"Prueba de conexion S3","headless":false}'
+  -d '{"space":"Bancolombia prueba","headless":false}'
 ```
 
-La respuesta devuelve tenants, espacio, flujos listados, flujo seleccionado y
-la ruta del JSON descargado. MFA, SSO y CAPTCHA requieren intervencion manual;
-la automatizacion no los evade.
+Sin `dataflow` se exporta un JSON independiente por cada flujo encontrado en el
+espacio. Si se envia `dataflow`, solo se exporta ese flujo. Los archivos quedan
+en `QLIK_DOWNLOAD_DIR` con el nombre del flujo. La respuesta devuelve las rutas
+de los JSON guardados. MFA, SSO y CAPTCHA requieren intervencion manual; la
+automatizacion no los evade.
 
 ## PostgreSQL
 

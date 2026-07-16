@@ -31,6 +31,8 @@ FastAPI y preparar persistencia async para SQLite y PostgreSQL.
 - El flujo contra Qlik no se ejecuta en tests locales porque requiere credenciales
   reales y autorización del tenant. Debe validarse con `.env` local y `POST
   /api/v1/qlik/runs`.
+- Cuando `QLIK_DATAFLOW_NAME` queda vacío, el flujo descarga un JSON separado por
+  cada dataflow; si se informa, descarga únicamente ese dataflow.
 - `app/qlik/automation.py` se excluye de cobertura unitaria por ser un adapter
   externo; su cobertura corresponde a una E2E autorizada.
 - FastAPI/Starlette muestra una advertencia de compatibilidad sobre `TestClient`

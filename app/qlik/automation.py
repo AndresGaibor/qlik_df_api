@@ -2,6 +2,7 @@ import json
 import re
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urljoin
 
 from playwright.async_api import Page, async_playwright
 
@@ -98,11 +99,33 @@ class QlikAutomation:
         await page.get_by_test_id("browser-space-filter-btn").get_by_text(space_name).wait_for()
 
         dataflows = await self._list_dataflows(page)
-        selected_dataflow = self._select(dataflows, dataflow_name, "flujo de datos")
-        card = page.get_by_test_id("appsItem").filter(has_text=selected_dataflow["name"]).first
-        await card.get_by_test_id("app-card-container-link").click()
-        await page.wait_for_url(re.compile(r"/dataflow/[^/]+/overview/summary"), timeout=60_000)
+        selected_dataflows = (
+            [self._select(dataflows, dataflow_name, "flujo de datos")]
+            if dataflow_name
+            else dataflows
+        )
+        downloaded_files = []
+        catalog_url = page.url
+        for dataflow in selected_dataflows:
+            await page.goto(urljoin(catalog_url, dataflow["href"]), wait_until="domcontentloaded")
+            await page.wait_for_url(re.compile(r"/dataflow/[^/]+/overview/summary"), timeout=60_000)
+            downloaded_files.append(
+                await self._download_current_dataflow(page, download_dir, dataflow["name"])
+            )
 
+        return {
+            "tenants": tenants,
+            "selected_tenant": selected_tenant,
+            "space": {"name": space_name},
+            "dataflows": dataflows,
+            "selected_dataflows": selected_dataflows,
+            "downloaded_files": downloaded_files,
+            "completed_at": datetime.now(UTC).isoformat(),
+        }
+
+    async def _download_current_dataflow(
+        self, page: Page, download_dir: Any, dataflow_name: str
+    ) -> str:
         context_menu = page.get_by_test_id("context-menu")
         if await context_menu.count():
             await context_menu.first.click()
@@ -122,23 +145,23 @@ class QlikAutomation:
         async with page.expect_download() as download_info:
             await export_action.click()
         download = await download_info.value
-        filename = download.suggested_filename
-        target = download_dir / (filename if filename.endswith(".json") else f"{filename}.json")
+        target = self._unique_json_path(download_dir, dataflow_name)
         await download.save_as(str(target))
         try:
             json.loads(target.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise QlikAutomationError("La descarga no contiene JSON valido.") from error
+        return str(target)
 
-        return {
-            "tenants": tenants,
-            "selected_tenant": selected_tenant,
-            "space": {"name": space_name},
-            "dataflows": dataflows,
-            "selected_dataflow": selected_dataflow,
-            "downloaded_file": str(target),
-            "completed_at": datetime.now(UTC).isoformat(),
-        }
+    @staticmethod
+    def _unique_json_path(download_dir: Any, dataflow_name: str) -> Any:
+        safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "_", dataflow_name).strip("._") or "dataflow"
+        target = download_dir / f"{safe_name}.json"
+        counter = 2
+        while target.exists():
+            target = download_dir / f"{safe_name}_{counter}.json"
+            counter += 1
+        return target
 
     async def _list_tenants(self, page: Page) -> list[dict[str, str]]:
         if not await page.get_by_text(

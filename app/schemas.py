@@ -1,8 +1,9 @@
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class QlikRunRequest(BaseModel):
@@ -20,9 +21,16 @@ class RunData(BaseModel):
     tenant_name: str | None
     space_name: str | None
     dataflow_name: str | None
-    downloaded_file: str | None
+    downloaded_files: list[str] = Field(default_factory=list)
     error: str | None
     created_at: datetime | None
+
+    @field_validator("downloaded_files", mode="before")
+    @classmethod
+    def parse_downloaded_files(cls, value: object) -> list[str]:
+        if isinstance(value, str):
+            return json.loads(value)
+        return value if isinstance(value, list) else []
 
 
 ResponseT = TypeVar("ResponseT")

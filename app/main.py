@@ -7,8 +7,10 @@ from app.core.config import Settings, get_settings
 from app.db import close_database, create_database, initialize_database
 
 
-def create_app(database_url: str | None = None) -> FastAPI:
-    settings = get_settings() if database_url is None else Settings(database_url=database_url)
+def create_app(database_url: str | None = None, settings: Settings | None = None) -> FastAPI:
+    settings = settings or (
+        get_settings() if database_url is None else Settings(database_url=database_url)
+    )
     engine, session_factory = create_database(settings.database_url)
 
     @asynccontextmanager
