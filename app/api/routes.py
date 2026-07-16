@@ -1,4 +1,5 @@
 import json
+import logging
 
 from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy import select
@@ -8,6 +9,7 @@ from app.qlik.automation import QlikAutomation, QlikAutomationError
 from app.schemas import ApiResponse, QlikRunRequest, RunData
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/health", response_model=ApiResponse[dict[str, str]])
@@ -52,8 +54,12 @@ async def create_qlik_run(request: Request, payload: QlikRunRequest) -> ApiRespo
             run.status = "failed"
             run.error = "Error interno durante la automatizacion Qlik"
             await session.commit()
+            logger.exception("Error inesperado durante la automatizacion Qlik")
+            detail = "No se pudo completar la automatizacion Qlik"
+            if settings.app_env == "development":
+                detail = f"{type(error).__name__}: {error}"
             raise HTTPException(
-                status_code=502, detail="No se pudo completar la automatizacion Qlik"
+                status_code=502, detail=detail
             ) from error
 
         await session.commit()

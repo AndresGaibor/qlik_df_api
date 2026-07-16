@@ -77,15 +77,7 @@ class QlikAutomation:
             await page.get_by_role(
                 "button", name=re.compile("log in|iniciar sesión", re.IGNORECASE)
             ).click()
-            challenge = page.get_by_text(
-                re.compile("multi-factor|two-factor|mfa|sso|captcha", re.IGNORECASE)
-            )
-            if await challenge.count():
-                raise QlikAutomationError(
-                    "Qlik requiere MFA, SSO o CAPTCHA; completa el desafio manualmente."
-                )
-            await page.wait_for_url(re.compile(r"^(?!.*(?:login|auth0)).*"), timeout=60_000)
-            await self._wait_for_page_ready(page)
+            await self._wait_for_authenticated_page(page)
             if self.settings.qlik_storage_state:
                 self.settings.qlik_storage_state.parent.mkdir(parents=True, exist_ok=True)
                 await context.storage_state(path=str(self.settings.qlik_storage_state))
@@ -177,6 +169,17 @@ class QlikAutomation:
         await login.or_(tenant).or_(prepare_data).first.wait_for(
             state="visible", timeout=60_000
         )
+
+    @staticmethod
+    async def _wait_for_authenticated_page(page: Page) -> None:
+        tenant = page.get_by_text(re.compile("choose tenant|selecciona.*tenant", re.IGNORECASE))
+        prepare_data = page.get_by_test_id("nav-menu.analytics_creation.prepare_data_home")
+        try:
+            await tenant.or_(prepare_data).first.wait_for(state="visible", timeout=60_000)
+        except PlaywrightTimeoutError as error:
+            raise QlikAutomationError(
+                "El login no termino. Si Qlik solicita MFA, completalo con el navegador visible."
+            ) from error
 
     @staticmethod
     def _unique_json_path(download_dir: Any, dataflow_name: str) -> Any:
