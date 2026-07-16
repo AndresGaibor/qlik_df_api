@@ -85,7 +85,8 @@ class QlikAutomation:
         tenants = await self._list_tenants(page)
         if tenants:
             selected_tenant = self._select(tenants, tenant_name, "tenant")
-            await page.get_by_role("button").filter(has_text=selected_tenant["name"]).first.click()
+            page = await self._open_selected_tenant(page, context, selected_tenant["name"])
+            await self._wait_for_page_ready(page)
         else:
             selected_tenant = {
                 "name": tenant_name or "tenant actual",
@@ -188,6 +189,18 @@ class QlikAutomation:
         await page.get_by_test_id("browser-space-filter-btn").wait_for(
             state="visible", timeout=60_000
         )
+
+    @staticmethod
+    async def _open_selected_tenant(page: Page, context: Any, tenant_name: str) -> Page:
+        tenant_button = page.get_by_role("button").filter(has_text=tenant_name).first
+        try:
+            async with context.expect_page(timeout=5_000) as page_info:
+                await tenant_button.click()
+            tenant_page = await page_info.value
+            await tenant_page.wait_for_load_state("load", timeout=60_000)
+            return tenant_page
+        except PlaywrightTimeoutError:
+            return page
 
     @staticmethod
     async def _wait_for_authenticated_page(page: Page) -> None:
