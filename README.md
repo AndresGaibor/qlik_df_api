@@ -16,6 +16,10 @@ cp .env.example .env
 Edita `.env` y coloca tus credenciales Qlik. El password nunca se persiste en
 la base ni se imprime en logs.
 
+Deja `QLIK_STORAGE_STATE` vacío para iniciar siempre desde
+`QLIK_TARGET_URL=https://qlikcloud.com/`. Si configuras una ruta, se reutilizará
+la sesión guardada y Qlik puede entrar directamente al hub.
+
 ## Ejecutar la API
 
 ```bash

@@ -10,6 +10,12 @@ def test_settings_use_sqlite_by_default(monkeypatch: pytest.MonkeyPatch) -> None
     assert settings.database_url.startswith("sqlite+aiosqlite:///")
 
 
+def test_storage_state_is_optional() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.qlik_storage_state is None
+
+
 def test_settings_require_qlik_credentials_for_automation() -> None:
     settings = Settings(_env_file=None, QLIK_SPACE="Espacio")
 

@@ -5,6 +5,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 from playwright.async_api import Page, async_playwright
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from app.core.config import Settings
 
@@ -36,7 +37,7 @@ class QlikAutomation:
                 headless=self.settings.qlik_headless if headless is None else headless
             )
             context_options: dict[str, Any] = {"accept_downloads": True}
-            if self.settings.qlik_storage_state.exists():
+            if self.settings.qlik_storage_state and self.settings.qlik_storage_state.exists():
                 context_options["storage_state"] = str(self.settings.qlik_storage_state)
             context = await browser.new_context(**context_options)
             page = await context.new_page()
@@ -61,9 +62,11 @@ class QlikAutomation:
         await page.goto(
             self.settings.qlik_target_url, wait_until="domcontentloaded", timeout=120_000
         )
+        await self._wait_for_page_ready(page)
 
-        if await page.get_by_label(re.compile("email", re.IGNORECASE)).count():
-            await page.get_by_label(re.compile("email", re.IGNORECASE)).fill(
+        login_email = page.get_by_label(re.compile("email", re.IGNORECASE))
+        if await login_email.count():
+            await login_email.first.fill(
                 self.settings.qlik_email or ""
             )
             await page.get_by_label(re.compile("password|contraseña", re.IGNORECASE)).fill(
@@ -82,15 +85,26 @@ class QlikAutomation:
                     "Qlik requiere MFA, SSO o CAPTCHA; completa el desafio manualmente."
                 )
             await page.wait_for_url(re.compile(r"^(?!.*(?:login|auth0)).*"), timeout=60_000)
-            self.settings.qlik_storage_state.parent.mkdir(parents=True, exist_ok=True)
-            await context.storage_state(path=str(self.settings.qlik_storage_state))
+            await self._wait_for_page_ready(page)
+            if self.settings.qlik_storage_state:
+                self.settings.qlik_storage_state.parent.mkdir(parents=True, exist_ok=True)
+                await context.storage_state(path=str(self.settings.qlik_storage_state))
 
         tenants = await self._list_tenants(page)
-        selected_tenant = self._select(tenants, tenant_name, "tenant")
         if tenants:
+            selected_tenant = self._select(tenants, tenant_name, "tenant")
             await page.get_by_role("button").filter(has_text=selected_tenant["name"]).first.click()
+            await page.get_by_test_id(
+                "nav-menu.analytics_creation.prepare_data_home"
+            ).wait_for(state="visible", timeout=60_000)
+        else:
+            selected_tenant = {
+                "name": tenant_name or "tenant actual",
+                "hostname": page.url.split("/")[2] if "://" in page.url else page.url,
+            }
 
         await page.get_by_test_id("nav-menu.analytics_creation.prepare_data_home").click()
+        await page.wait_for_load_state("load", timeout=60_000)
         await page.get_by_test_id("browser-space-filter-btn").click()
         space_item = page.get_by_test_id(f"space-menu-item-{space_name}")
         if not await space_item.count():
@@ -108,6 +122,7 @@ class QlikAutomation:
         catalog_url = page.url
         for dataflow in selected_dataflows:
             await page.goto(urljoin(catalog_url, dataflow["href"]), wait_until="domcontentloaded")
+            await page.wait_for_load_state("load", timeout=60_000)
             await page.wait_for_url(re.compile(r"/dataflow/[^/]+/overview/summary"), timeout=60_000)
             downloaded_files.append(
                 await self._download_current_dataflow(page, download_dir, dataflow["name"])
@@ -154,6 +169,16 @@ class QlikAutomation:
         return str(target)
 
     @staticmethod
+    async def _wait_for_page_ready(page: Page) -> None:
+        await page.wait_for_load_state("load", timeout=60_000)
+        login = page.get_by_label(re.compile("email", re.IGNORECASE))
+        tenant = page.get_by_text(re.compile("choose tenant|selecciona.*tenant", re.IGNORECASE))
+        prepare_data = page.get_by_test_id("nav-menu.analytics_creation.prepare_data_home")
+        await login.or_(tenant).or_(prepare_data).first.wait_for(
+            state="visible", timeout=60_000
+        )
+
+    @staticmethod
     def _unique_json_path(download_dir: Any, dataflow_name: str) -> Any:
         safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "_", dataflow_name).strip("._") or "dataflow"
         target = download_dir / f"{safe_name}.json"
@@ -164,9 +189,12 @@ class QlikAutomation:
         return target
 
     async def _list_tenants(self, page: Page) -> list[dict[str, str]]:
-        if not await page.get_by_text(
+        tenant_heading = page.get_by_text(
             re.compile("choose tenant|selecciona.*tenant", re.IGNORECASE)
-        ).count():
+        )
+        try:
+            await tenant_heading.wait_for(timeout=5_000)
+        except PlaywrightTimeoutError:
             return []
         tenants: list[dict[str, str]] = []
         for text in await page.get_by_role("button").all_inner_texts():
@@ -179,6 +207,8 @@ class QlikAutomation:
     async def _list_dataflows(self, page: Page) -> list[dict[str, str]]:
         dataflows: list[dict[str, str]] = []
         cards = page.get_by_test_id("appsItem")
+        if await cards.count() == 0:
+            await cards.first.wait_for(state="visible", timeout=60_000)
         for index in range(await cards.count()):
             card = cards.nth(index)
             name = await card.get_attribute("data-testmeta")

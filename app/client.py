@@ -52,8 +52,12 @@ def main() -> int:
                 dataflow=args.dataflow,
             ),
         )
-    except (HTTPError, URLError, TimeoutError) as error:
-        print(f"No se pudo ejecutar la API Qlik: {error}", file=sys.stderr)
+    except HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")
+        print(f"No se pudo ejecutar la API Qlik (HTTP {error.code}): {detail}", file=sys.stderr)
+        return 1
+    except (URLError, TimeoutError) as error:
+        print(f"No se pudo conectar con la API Qlik: {error}", file=sys.stderr)
         return 1
 
     print(json.dumps(result, indent=2, ensure_ascii=False))

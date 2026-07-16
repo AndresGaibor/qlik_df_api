@@ -41,8 +41,8 @@ class Settings(BaseSettings):
     qlik_headless: bool = Field(
         default=False, validation_alias=AliasChoices("QLIK_HEADLESS", "qlik_headless")
     )
-    qlik_storage_state: Path = Field(
-        default=Path("artifacts/qlik-storage-state.json"),
+    qlik_storage_state: Path | None = Field(
+        default=None,
         validation_alias=AliasChoices("QLIK_STORAGE_STATE", "qlik_storage_state"),
     )
 
