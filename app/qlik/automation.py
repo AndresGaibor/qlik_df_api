@@ -86,7 +86,6 @@ class QlikAutomation:
         if tenants:
             selected_tenant = self._select(tenants, tenant_name, "tenant")
             await page.get_by_role("button").filter(has_text=selected_tenant["name"]).first.click()
-            await self._wait_for_prepare_data_entry(page)
         else:
             selected_tenant = {
                 "name": tenant_name or "tenant actual",
@@ -94,8 +93,8 @@ class QlikAutomation:
             }
 
         await self._open_prepare_data(page)
-        await page.wait_for_load_state("load", timeout=60_000)
-        await page.get_by_test_id("browser-space-filter-btn").click()
+        space_filter = page.get_by_test_id("browser-space-filter-btn")
+        await space_filter.click()
         space_item = page.get_by_test_id(f"space-menu-item-{space_name}")
         if not await space_item.count():
             raise QlikAutomationError(f"No se encontro el espacio solicitado: {space_name}")
@@ -184,13 +183,11 @@ class QlikAutomation:
             await page.wait_for_load_state("load", timeout=60_000)
 
     async def _open_prepare_data(self, page: Page) -> None:
-        try:
-            locator = self._prepare_data_locator(page)
-            await locator.wait_for(state="visible", timeout=20_000)
-            await locator.click()
-        except PlaywrightTimeoutError:
-            await page.goto(urljoin(page.url, "/analytics/prepare"), wait_until="domcontentloaded")
-            await page.wait_for_load_state("load", timeout=60_000)
+        await page.goto(urljoin(page.url, "/analytics/prepare"), wait_until="domcontentloaded")
+        await page.wait_for_load_state("load", timeout=60_000)
+        await page.get_by_test_id("browser-space-filter-btn").wait_for(
+            state="visible", timeout=60_000
+        )
 
     @staticmethod
     async def _wait_for_authenticated_page(page: Page) -> None:
