@@ -1,8 +1,10 @@
 import argparse
+import asyncio
 import json
 import sys
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+
+from app.core.config import get_settings
+from app.qlik.automation import QlikAutomation
 
 
 def construir_payload(
@@ -22,42 +24,43 @@ def construir_payload(
     return payload
 
 
-def ejecutar_run(api_url: str, payload: dict[str, object]) -> dict[str, object]:
-    request = Request(
-        f"{api_url.rstrip('/')}/api/v1/qlik/runs",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
+async def ejecutar_scraping(
+    *,
+    tenant: str | None = None,
+    space: str | None = None,
+    dataflow: str | None = None,
+    headless: bool | None = None,
+) -> dict[str, object]:
+    return await QlikAutomation(get_settings()).run(
+        tenant_name=tenant,
+        space_name=space,
+        dataflow_name=dataflow,
+        headless=headless,
     )
-    with urlopen(request, timeout=300) as response:
-        return json.loads(response.read().decode("utf-8"))
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Ejecuta una exportacion Qlik mediante la API")
-    parser.add_argument("--api-url", default="http://127.0.0.1:8000")
     parser.add_argument("--tenant")
     parser.add_argument("--space")
     parser.add_argument("--dataflow", help="Si se omite, exporta todos los dataflows")
-    parser.add_argument("--headless", action="store_true")
+    parser.add_argument("--headless", action="store_true", default=None)
     args = parser.parse_args()
 
     try:
-        result = ejecutar_run(
-            args.api_url,
-            construir_payload(
-                headless=args.headless,
+        result = asyncio.run(
+            ejecutar_scraping(
                 tenant=args.tenant,
                 space=args.space,
                 dataflow=args.dataflow,
-            ),
+                headless=args.headless,
+            )
         )
-    except HTTPError as error:
-        detail = error.read().decode("utf-8", errors="replace")
-        print(f"No se pudo ejecutar la API Qlik (HTTP {error.code}): {detail}", file=sys.stderr)
-        return 1
-    except (URLError, TimeoutError) as error:
-        print(f"No se pudo conectar con la API Qlik: {error}", file=sys.stderr)
+    except Exception as error:
+        print(
+            f"No se pudo ejecutar el scraping Qlik: {type(error).__name__}: {error}",
+            file=sys.stderr,
+        )
         return 1
 
     print(json.dumps(result, indent=2, ensure_ascii=False))

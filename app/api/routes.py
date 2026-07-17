@@ -58,9 +58,7 @@ async def create_qlik_run(request: Request, payload: QlikRunRequest) -> ApiRespo
             detail = "No se pudo completar la automatizacion Qlik"
             if settings.app_env == "development":
                 detail = f"{type(error).__name__}: {error}"
-            raise HTTPException(
-                status_code=502, detail=detail
-            ) from error
+            raise HTTPException(status_code=502, detail=detail) from error
 
         await session.commit()
         await session.refresh(run)

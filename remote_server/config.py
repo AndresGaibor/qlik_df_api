@@ -9,3 +9,7 @@ class RemoteSettings(BaseSettings):
 
     remote_api_key: SecretStr
     remote_csv_path: Path = Path("data/dataflows.csv")
+    impala_host: str = "localhost"
+    impala_port: int = 21050
+    impala_auth_mechanism: str = "NOSASL"
+    impala_timeout: int = 30
