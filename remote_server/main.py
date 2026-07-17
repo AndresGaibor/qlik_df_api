@@ -57,7 +57,7 @@ async def list_dataflows(
 async def get_dataflows_by_name(
     name: str,
     _: Annotated[None, Depends(require_api_key)],
-) -> dict[str, list[dict[str, str]]]:
+) -> dict[str, list[dict[str, object]]]:
     records = repository.find_by_name(name)
     if not records:
         raise HTTPException(status_code=404, detail=f"Dataflows con nombre '{name}' no encontrados")

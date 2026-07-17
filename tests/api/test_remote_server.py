@@ -26,7 +26,13 @@ def test_remote_server_replaces_csv_and_requires_api_key(tmp_path, monkeypatch) 
         listed = client.get(
             "/api/v1/dataflows", headers={"X-API-Key": "clave-de-prueba"}
         )
+        by_name = client.get(
+            "/api/v1/dataflows/name/Flujo_1",
+            headers={"X-API-Key": "clave-de-prueba"},
+        )
 
     assert unauthorized.status_code == 401
     assert replaced.json() == {"data": {"count": 1}}
     assert listed.json()["data"][0]["dataflow_id"] == "flow-1"
+    assert by_name.status_code == 200
+    assert by_name.json()["data"][0]["dataflow_name"] == "Flujo 1"
