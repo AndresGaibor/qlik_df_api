@@ -1,8 +1,8 @@
 # Qlik Data Flow API
 
 Automatización en Python para iniciar sesión en Qlik Cloud con Playwright,
-descargar el JSON de cada dataflow, extraer sus destinos y enviar un único
-listado al servidor remoto.
+listar dataflows via API REST, descargar el JSON de cada uno, extraer sus
+destinos y enviar un único listado al servidor remoto.
 
 El flujo recomendado es:
 
@@ -612,15 +612,20 @@ Desde la raíz del proyecto:
 .venv/bin/python -m app.client
 ```
 
-El proceso:
+El proceso tiene dos fases:
 
-1. Abre Qlik Cloud con Playwright.
-2. Completa el login y permite intervención manual si `QLIK_HEADLESS=false`.
-3. Selecciona el tenant y el espacio configurados.
-4. Descarga un JSON por cada dataflow seleccionado.
-5. Extrae los targets y sus metadatos.
-6. Envía un único `PUT` al servidor remoto.
-7. Imprime el resultado JSON en la terminal.
+**Fase 1 — API REST (listado rápido):**
+1. Abre Qlik Cloud con Playwright y completa el login.
+2. Extrae las cookies de la sesión autenticada.
+3. Llama a la API de Qlik Cloud para listar los dataflows del espacio.
+4. Envía el listado básico (id, nombre, descripción) al servidor remoto.
+
+**Fase 2 — Scraping (JSON completo):**
+4. Navega a la vista de Prepare Data y filtra por espacio.
+5. Para cada dataflow: abre su overview, exporta el JSON via menú contextual.
+6. Procesa los targets (filename, extension, format, etc.).
+7. Envía el listado enriquecido al servidor remoto (reemplaza el anterior).
+8. Imprime el resultado JSON en la terminal.
 
 Para seleccionar opciones sin modificar `.env`:
 
@@ -742,6 +747,32 @@ curl https://tu-dominio.example.com/health
 Comprueba DNS, HTTPS, reverse proxy, firewall y que
 `REMOTE_API_URL` apunte al dominio correcto.
 
+### `unknown directive "brotli"` al ejecutar `nginx -t`
+
+El servidor tiene un archivo `/etc/nginx/conf.d/brotli.conf` que usa la
+directiva `brotli`, pero el módulo Brotli de Nginx no está instalado. Brotli no
+es necesario para esta API. Desactiva el archivo sin eliminarlo:
+
+```bash
+sudo mv /etc/nginx/conf.d/brotli.conf \
+  /etc/nginx/conf.d/brotli.conf.disabled
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### `ssl_prefer_server_ciphers directive is duplicate` al ejecutar `nginx -t`
+
+El servidor tiene una configuración SSL duplicada en
+`/etc/nginx/conf.d/ssl.conf`. Si las directivas SSL ya están definidas por otra
+configuración de Nginx, desactiva este archivo conservando una copia:
+
+```bash
+sudo mv /etc/nginx/conf.d/ssl.conf \
+  /etc/nginx/conf.d/ssl.conf.disabled
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
 ### Qlik abre pero el login no termina
 
 Usa `QLIK_HEADLESS=false`, ejecuta el cliente desde una terminal visible y
@@ -757,11 +788,13 @@ dejarlo parcialmente escrito.
 
 ```text
 app/client.py                 Punto de entrada directo del Mac
-app/qlik/automation.py        Login, navegación, descargas y envío remoto
-app/qlik/processor.py         Extracción de dataflows y targets
+app/qlik/api_client.py        Cliente REST para Qlik Cloud API (listar dataflows)
+app/qlik/automation.py        Login, listado API, scraping, descargas y envío
+app/qlik/processor.py         Extracción de targets desde JSON descargado
 app/remote/client.py          Cliente HTTP del servidor remoto
 app/remote/csv_repository.py  Reemplazo y lectura atómica del CSV
 remote_server/main.py         API remota protegida por X-API-Key
 remote_server/config.py       Configuración del servidor remoto
+docs/qlik-cloud-api.md        Documentación de endpoints Qlik Cloud
 tests/                        Pruebas unitarias y de API
 ```
