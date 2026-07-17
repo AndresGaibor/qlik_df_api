@@ -10,7 +10,11 @@ def _replace_sync(url: str, api_key: str, records: list[DataflowRecord]) -> int:
     request = Request(
         f"{url.rstrip('/')}/api/v1/dataflows",
         data=json.dumps({"data": [record.model_dump() for record in records]}).encode(),
-        headers={"Content-Type": "application/json", "X-API-Key": api_key},
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "qlik-df-api/0.1",
+            "X-API-Key": api_key,
+        },
         method="PUT",
     )
     with urlopen(request, timeout=60) as response:
