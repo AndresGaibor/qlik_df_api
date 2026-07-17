@@ -84,7 +84,7 @@ Configuración mínima:
 QLIK_EMAIL=usuario@ejemplo.com
 QLIK_PASSWORD=tu-password-de-qlik
 QLIK_TENANT=
-QLIK_SPACE=Bancolombia prueba
+QLIK_SPACE=mi-espacio
 QLIK_DATAFLOW_NAME=
 QLIK_TARGET_URL=https://qlikcloud.com/
 QLIK_DOWNLOAD_DIR=downloads
@@ -265,7 +265,7 @@ Para seleccionar opciones sin modificar `.env`:
 
 ```bash
 .venv/bin/python -m app.client --tenant "mi-tenant"
-.venv/bin/python -m app.client --space "Bancolombia prueba"
+.venv/bin/python -m app.client --space "mi-espacio"
 .venv/bin/python -m app.client --dataflow "Prueba de conexion S3"
 .venv/bin/python -m app.client --headless
 ```
@@ -275,7 +275,7 @@ Se pueden combinar:
 ```bash
 .venv/bin/python -m app.client \
   --tenant "mi-tenant" \
-  --space "Bancolombia prueba" \
+  --space "mi-espacio" \
   --dataflow "Prueba de conexion S3"
 ```
 
