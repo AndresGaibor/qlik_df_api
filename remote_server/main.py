@@ -2,7 +2,7 @@ import logging
 import secrets
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi import Depends, FastAPI, Header, HTTPException, status
 
 from app.remote.csv_repository import CsvDataflowRepository
 from app.remote.impala import listar_columnas, listar_databases, listar_tablas
@@ -39,15 +39,30 @@ async def replace_dataflows(
 @app.get("/api/v1/dataflows")
 async def list_dataflows(
     _: Annotated[None, Depends(require_api_key)],
-    dataflow_id: str | None = Query(default=None),
-    dataflow_name: str | None = Query(default=None),
-) -> dict[str, list[dict[str, object]]]:
+) -> dict[str, list[dict[str, str]]]:
     records = repository.list_records()
-    if dataflow_id:
-        records = [record for record in records if record.dataflow_id == dataflow_id]
-    if dataflow_name:
-        records = [record for record in records if record.dataflow_name == dataflow_name]
-    return {"data": [record.model_dump() for record in records]}
+    return {
+        "data": [
+            {
+                "dataflow_id": r.dataflow_id,
+                "dataflow_name": r.dataflow_name,
+                "description": r.description,
+            }
+            for r in records
+        ]
+    }
+
+
+@app.get("/api/v1/dataflows/{dataflow_id}")
+async def get_dataflow_detail(
+    dataflow_id: str,
+    _: Annotated[None, Depends(require_api_key)],
+) -> dict[str, dict[str, object]]:
+    records = repository.list_records()
+    record = next((r for r in records if r.dataflow_id == dataflow_id), None)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Dataflow {dataflow_id} no encontrado")
+    return {"data": record.model_dump()}
 
 
 @app.get("/api/v1/impala/databases")

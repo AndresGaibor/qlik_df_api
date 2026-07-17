@@ -9,6 +9,12 @@ from playwright.async_api import Page, async_playwright
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from app.core.config import Settings
+from app.qlik.api_client import (
+    QlikCloudAPIError,
+    _extraer_tenant_url,
+    listar_dataflows_api,
+    listar_espacios,
+)
 from app.qlik.processor import procesar_dataflow
 from app.remote.client import reemplazar_dataflows
 
@@ -96,6 +102,30 @@ class QlikAutomation:
                 "hostname": page.url.split("/")[2] if "://" in page.url else page.url,
             }
 
+        tenant_url = _extraer_tenant_url(page.url)
+        cookies = await context.cookies()
+
+        api_dataflows = await self._listar_dataflows_api(cookies, tenant_url, space_name)
+
+        remote_count_api = None
+        if self.settings.remote_api_url and self.settings.remote_api_key and api_dataflows:
+            records_api = [
+                {
+                    "dataflow_id": df.get("dataflow_id", ""),
+                    "dataflow_name": df.get("dataflow_name", ""),
+                    "description": df.get("description", ""),
+                }
+                for df in api_dataflows
+            ]
+            from app.remote.schemas import DataflowRecord
+
+            api_records = [DataflowRecord(**r) for r in records_api]
+            remote_count_api = await reemplazar_dataflows(
+                self.settings.remote_api_url,
+                self.settings.remote_api_key.get_secret_value(),
+                api_records,
+            )
+
         await self._open_prepare_data(page)
         space_filter = page.get_by_test_id("browser-space-filter-btn")
         await space_filter.click()
@@ -121,14 +151,14 @@ class QlikAutomation:
                 await self._download_current_dataflow(page, download_dir, dataflow["name"])
             )
 
-        remote_count = None
+        remote_count_scrape = None
         if self.settings.remote_api_url and self.settings.remote_api_key:
             records = [
                 record
                 for downloaded_file in downloaded_files
                 for record in procesar_dataflow(Path(downloaded_file))
             ]
-            remote_count = await reemplazar_dataflows(
+            remote_count_scrape = await reemplazar_dataflows(
                 self.settings.remote_api_url,
                 self.settings.remote_api_key.get_secret_value(),
                 records,
@@ -138,12 +168,29 @@ class QlikAutomation:
             "tenants": tenants,
             "selected_tenant": selected_tenant,
             "space": {"name": space_name},
+            "api_dataflows": api_dataflows,
+            "remote_records_api": remote_count_api,
             "dataflows": dataflows,
             "selected_dataflows": selected_dataflows,
             "downloaded_files": downloaded_files,
-            "remote_records_replaced": remote_count,
+            "remote_records_scrape": remote_count_scrape,
             "completed_at": datetime.now(UTC).isoformat(),
         }
+
+    async def _listar_dataflows_api(
+        self, cookies: list, tenant_url: str, space_name: str
+    ) -> list[dict[str, Any]]:
+        try:
+            espacios = await listar_espacios(cookies, tenant_url, space_name)
+            if not espacios:
+                return []
+            espacio = espacios[0]
+            space_id = espacio.get("id", "")
+            if not space_id:
+                return []
+            return await listar_dataflows_api(cookies, tenant_url, space_id)
+        except QlikCloudAPIError:
+            return []
 
     async def _download_current_dataflow(
         self, page: Page, download_dir: Any, dataflow_name: str

@@ -197,6 +197,288 @@ Antes de exponer el servicio a Internet, colócalo detrás de HTTPS mediante un
 reverse proxy como Nginx, Caddy o un túnel privado. No envíes la API key por una
 conexión HTTP pública.
 
+### 6.1 HTTPS rápido sin dominio
+
+Si no tienes dominio y necesitas acceder temporalmente mediante la IP pública,
+puedes usar un certificado autofirmado. El navegador mostrará una advertencia de
+seguridad porque ningún proveedor público ha validado ese certificado. Para uso
+permanente o público, un dominio con un certificado de Let's Encrypt sigue siendo
+la opción recomendada.
+
+En el servidor, detén el Uvicorn HTTP que esté ejecutándose con `Ctrl+C` y crea
+el certificado. Sustituye la IP por la IP pública real del servidor:
+
+```bash
+cd ~/qlik_df_api
+IP_SERVIDOR="IP_PUBLICA_DEL_SERVIDOR"
+
+mkdir -p certs
+openssl req -x509 -newkey rsa:4096 -nodes \
+  -keyout certs/server.key \
+  -out certs/server.crt \
+  -days 365 \
+  -subj "/CN=${IP_SERVIDOR}" \
+  -addext "subjectAltName=IP:${IP_SERVIDOR}"
+
+chmod 600 certs/server.key
+chmod 644 certs/server.crt
+```
+
+Permite el puerto HTTPS de Uvicorn en el firewall:
+
+```bash
+sudo ufw allow OpenSSH
+sudo ufw allow 8001/tcp
+sudo ufw enable
+```
+
+Inicia la API con TLS:
+
+```bash
+.venv/bin/uvicorn remote_server.main:app \
+  --host 0.0.0.0 \
+  --port 8001 \
+  --ssl-keyfile certs/server.key \
+  --ssl-certfile certs/server.crt
+```
+
+La API estará disponible en:
+
+```text
+https://IP_PUBLICA_DEL_SERVIDOR:8001
+```
+
+Prueba desde otra terminal. La opción `-k` acepta el certificado autofirmado:
+
+```bash
+curl -k https://IP_PUBLICA_DEL_SERVIDOR:8001/health
+
+curl -k \
+  -H 'X-API-Key: pega-aqui-la-clave-generada' \
+  https://IP_PUBLICA_DEL_SERVIDOR:8001/api/v1/dataflows
+```
+
+Para que el cliente del Mac valide el certificado sin desactivar TLS, copia el
+certificado público al Mac:
+
+```bash
+scp usuario@IP_PUBLICA_DEL_SERVIDOR:~/qlik_df_api/certs/server.crt .
+```
+
+Configura la URL remota en el `.env` del Mac:
+
+```env
+REMOTE_API_URL=https://IP_PUBLICA_DEL_SERVIDOR:8001
+```
+
+Ejecuta el cliente indicando el certificado confiable:
+
+```bash
+SSL_CERT_FILE=server.crt .venv/bin/python -m app.client
+```
+
+`curl -k` y desactivar la verificación TLS en el código solo deben usarse para
+pruebas. No publiques `certs/server.key` ni lo subas a Git.
+
+### 6.2 Conectar desde Qlik Cloud
+
+El certificado no tiene que instalarse en el Mac para que Qlik Cloud consuma la
+API. Al crear una conexión **REST** en Qlik Cloud, configura exactamente lo
+siguiente:
+
+```text
+URL:
+https://209.50.245.140:8001/api/v1/impala/databases/default/tables/ventas/columns
+
+Método:
+GET
+
+Header:
+X-API-Key: TU_API_KEY
+```
+
+En la configuración de la conexión REST:
+
+1. Selecciona el método `GET`.
+2. Agrega el header `X-API-Key` con la misma clave configurada en `remote_server/.env`.
+3. En **Certificate validation**, selecciona **Skip server certificate validation**.
+4. Ejecuta **Test connection**.
+
+La URL base del servidor es:
+
+```text
+https://209.50.245.140:8001
+```
+
+La opción **Skip server certificate validation** permite que Qlik Cloud use el
+certificado autofirmado. Es la alternativa más rápida, pero debe usarse solo
+para pruebas porque Qlik Cloud no valida que el servidor sea realmente el
+servidor esperado.
+
+Como alternativa, descarga únicamente `certs/server.crt` y súbelo en **Custom
+Root CA Certificate** dentro de la conexión REST. Nunca subas `server.key`.
+Después selecciona la validación mediante el certificado personalizado y prueba
+la conexión nuevamente.
+
+### 6.3 Qlik Automate: bloque Call URL
+
+El bloque **Call URL** de Qlik Automate es diferente de una conexión REST. La
+documentación oficial indica que, cuando la verificación SSL está activa, el
+servidor externo debe entregar la cadena completa de certificados. El bloque
+`Call URL` no documenta una opción para omitir la validación TLS ni para cargar
+una CA personalizada.
+
+Referencia oficial:
+<https://help.qlik.com/en-US/cloud-services/Subsystems/Hub/Content/Sense_QlikAutomation/basic/call-url-block.htm>
+
+Configura el bloque con estos valores:
+
+```text
+URL:
+https://209.50.245.140:8001/api/v1/impala/databases/default/tables/ventas/columns
+
+Method:
+GET
+
+Header:
+X-API-Key: TU_API_KEY
+```
+
+En **Call URL** no existe un campo equivalente a **Skip server certificate
+validation**. Por lo tanto, el certificado autofirmado usado en la sección
+anterior puede funcionar con una conexión REST configurada para omitir la
+validación, pero no debe asumirse que funcionará desde `Call URL`.
+
+Para usar `Call URL` de forma compatible, el servidor debe presentar un
+certificado firmado por una autoridad pública confiable y entregar la cadena
+completa. La opción práctica es usar un dominio y un certificado de Let's
+Encrypt. Sin dominio, se necesita un certificado público emitido para la IP o
+un mecanismo equivalente; el certificado autofirmado no es suficiente cuando
+`Call URL` valida SSL.
+
+### 6.4 Subdominio en Cloudflare para Qlik Automate
+
+La configuración recomendada es publicar la API como
+`api.andresgaibor.com` detrás del proxy de Cloudflare. Qlik Automate verá el
+certificado público de Cloudflare y no tendrá que confiar en el certificado
+autofirmado del servidor.
+
+#### Configuración en Cloudflare
+
+En **DNS > Records** del dominio `andresgaibor.com`, crea:
+
+```text
+Type: A
+Name: api
+IPv4 address: 209.50.245.140
+Proxy status: Proxied (nube naranja)
+```
+
+En **SSL/TLS > Overview**, selecciona **Full (strict)**.
+
+En **SSL/TLS > Origin Server > Create Certificate**, crea un certificado de
+origen para:
+
+```text
+api.andresgaibor.com
+```
+
+Guarda el certificado público como `/etc/nginx/ssl/cloudflare-origin.pem` y la
+clave privada como `/etc/nginx/ssl/cloudflare-origin.key`. La clave privada no
+debe versionarse ni compartirse.
+
+#### Configuración en el servidor
+
+Instala Nginx:
+
+```bash
+sudo apt update
+sudo apt install -y nginx
+sudo mkdir -p /etc/nginx/ssl
+sudo chmod 700 /etc/nginx/ssl
+```
+
+Crea el archivo `/etc/nginx/sites-available/qlik-api`:
+
+```nginx
+server {
+    listen 80;
+    server_name api.andresgaibor.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name api.andresgaibor.com;
+
+    ssl_certificate /etc/nginx/ssl/cloudflare-origin.pem;
+    ssl_certificate_key /etc/nginx/ssl/cloudflare-origin.key;
+
+    location / {
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Activa la configuración:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/qlik-api /etc/nginx/sites-enabled/qlik-api
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+En `systemd`, Uvicorn debe quedar en HTTP local porque Nginx será quien
+termine HTTPS. Cambia `ExecStart` por:
+
+```ini
+ExecStart=/root/qlik_df_api/.venv/bin/uvicorn remote_server.main:app --host 127.0.0.1 --port 8001
+```
+
+Aplica el cambio:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart qlik-dataflows.service
+sudo systemctl restart nginx
+```
+
+Abre únicamente los puertos necesarios:
+
+```bash
+sudo ufw allow OpenSSH
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw delete allow 8001/tcp
+sudo ufw enable
+```
+
+El estado DNS debe permanecer como **Proxied**. Si se cambia a **DNS only**,
+Qlik Automate verá directamente el certificado de origen de Cloudflare y la
+validación puede fallar.
+
+Verifica desde fuera del servidor:
+
+```bash
+curl https://api.andresgaibor.com/health
+curl -H 'X-API-Key: TU_API_KEY' \
+  https://api.andresgaibor.com/api/v1/impala/databases/default/tables/ventas/columns
+```
+
+En Qlik Automate, el bloque **Call URL** debe usar:
+
+```text
+https://api.andresgaibor.com/api/v1/impala/databases/default/tables/ventas/columns
+```
+
+El certificado de Cloudflare será validado normalmente, sin seleccionar ninguna
+opción para ignorar SSL.
+
 ## 7. Mantener la API remota ejecutándose
 
 Para una instalación simple con systemd, crea el servicio:
@@ -242,6 +524,85 @@ sudo ufw allow OpenSSH
 sudo ufw allow 443/tcp
 sudo ufw enable
 ```
+
+Si elegiste la opción rápida sin reverse proxy, permite también el puerto de
+Uvicorn:
+
+```bash
+sudo ufw allow 8001/tcp
+```
+
+Para ejecutar la opción rápida automáticamente con `systemd`, reemplaza la
+línea `ExecStart` anterior por esta, ajustando `usuario` y la ruta si es
+necesario:
+
+```ini
+ExecStart=/home/usuario/qlik_df_api/.venv/bin/uvicorn remote_server.main:app --host 0.0.0.0 --port 8001 --ssl-keyfile=/home/usuario/qlik_df_api/certs/server.key --ssl-certfile=/home/usuario/qlik_df_api/certs/server.crt
+```
+
+Después aplica el cambio:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart qlik-dataflows.service
+sudo systemctl status qlik-dataflows.service
+```
+
+#### Instalación rápida actual en `/root/qlik_df_api`
+
+Si el proyecto está instalado como `root`, primero detén el Uvicorn que está en
+primer plano con `Ctrl+C`. Luego crea el servicio:
+
+```bash
+sudo nano /etc/systemd/system/qlik-dataflows.service
+```
+
+Usa este contenido:
+
+```ini
+[Unit]
+Description=Qlik Dataflows Remote API HTTPS
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/qlik_df_api
+ExecStart=/root/qlik_df_api/.venv/bin/uvicorn remote_server.main:app --host 0.0.0.0 --port 8001 --ssl-keyfile=/root/qlik_df_api/certs/server.key --ssl-certfile=/root/qlik_df_api/certs/server.crt
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Guarda el archivo y activa el servicio:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable qlik-dataflows.service
+sudo systemctl start qlik-dataflows.service
+sudo systemctl status qlik-dataflows.service
+```
+
+El servicio seguirá ejecutándose aunque cierres la sesión SSH y volverá a
+iniciarse automáticamente después de reiniciar el servidor. Para revisar los
+logs en tiempo real:
+
+```bash
+sudo journalctl -u qlik-dataflows.service -f
+```
+
+Comprueba que responde:
+
+```bash
+curl -k https://209.50.245.140:8001/health
+```
+
+Ejecutar la API como `root` es una solución rápida. Para una instalación
+permanente, crea un usuario dedicado y cambia `User`, `WorkingDirectory` y las
+rutas del servicio para no ejecutar Uvicorn con privilegios de administrador.
 
 ## 8. Ejecutar el scraping desde el Mac
 
