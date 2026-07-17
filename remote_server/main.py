@@ -1,10 +1,13 @@
+import csv
+import io
 import logging
 import secrets
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi.responses import StreamingResponse
 
-from app.remote.csv_repository import CsvDataflowRepository
+from app.remote.csv_repository import FIELDS, CsvDataflowRepository
 from app.remote.impala import listar_columnas, listar_databases, listar_tablas
 from app.remote.schemas import ReplaceDataflowsRequest
 from remote_server.config import RemoteSettings
@@ -51,6 +54,28 @@ async def list_dataflows(
             for r in records
         ]
     }
+
+
+@app.get("/api/v1/dataflows/name/{name:path}")
+async def get_dataflows_by_name(
+    name: str,
+    _: Annotated[None, Depends(require_api_key)],
+) -> StreamingResponse:
+    records = repository.find_by_name(name)
+    if not records:
+        raise HTTPException(status_code=404, detail=f"Dataflows con nombre '{name}' no encontrados")
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=FIELDS)
+    writer.writeheader()
+    for record in records:
+        writer.writerow(record.model_dump())
+    buffer.seek(0)
+    safe_name = name.replace(" ", "_").replace("/", "_")
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="dataflows_{safe_name}.csv"'},
+    )
 
 
 @app.get("/api/v1/dataflows/{dataflow_id}")

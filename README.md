@@ -10,6 +10,10 @@ El flujo recomendado es:
 Mac + Playwright/Qlik -> PUT autenticado -> API remota -> data/dataflows.csv
 ```
 
+La guía detallada del despliegue HTTPS, Cloudflare, Apache/Plesk, Qlik Automate,
+systemd y troubleshooting está en
+[`docs/cloudflare-qlik-deployment.md`](docs/cloudflare-qlik-deployment.md).
+
 El Mac no necesita levantar una API local. Ejecuta directamente
 `python -m app.client`. El servidor remoto solamente almacena y consulta los
 datos procesados.
@@ -90,7 +94,7 @@ QLIK_TARGET_URL=https://qlikcloud.com/
 QLIK_DOWNLOAD_DIR=downloads
 QLIK_HEADLESS=false
 QLIK_STORAGE_STATE=
-REMOTE_API_URL=https://tu-dominio.example.com
+REMOTE_API_URL=https://apiqd.andresgaibor.com
 REMOTE_API_KEY=la-misma-clave-configurada-en-el-servidor
 ```
 
@@ -288,7 +292,7 @@ siguiente:
 
 ```text
 URL:
-https://209.50.245.140:8001/api/v1/impala/databases/default/tables/ventas/columns
+https://apiqd.andresgaibor.com/api/v1/impala/databases/default/tables/ventas/columns
 
 Método:
 GET
@@ -301,19 +305,21 @@ En la configuración de la conexión REST:
 
 1. Selecciona el método `GET`.
 2. Agrega el header `X-API-Key` con la misma clave configurada en `remote_server/.env`.
-3. En **Certificate validation**, selecciona **Skip server certificate validation**.
+3. En **Certificate validation**, usa la validación normal del certificado público de Cloudflare.
 4. Ejecuta **Test connection**.
 
-La URL base del servidor es:
+La URL base pública del servidor es:
 
 ```text
-https://209.50.245.140:8001
+https://apiqd.andresgaibor.com
 ```
 
-La opción **Skip server certificate validation** permite que Qlik Cloud use el
-certificado autofirmado. Es la alternativa más rápida, pero debe usarse solo
-para pruebas porque Qlik Cloud no valida que el servidor sea realmente el
-servidor esperado.
+Con Cloudflare activo, no selecciones **Skip server certificate validation**:
+Qlik Cloud debe validar el certificado público de Cloudflare normalmente.
+
+La opción **Skip server certificate validation** solo corresponde a la prueba
+antigua usando directamente el certificado autofirmado y la IP. Debe usarse
+únicamente en entornos de prueba.
 
 Como alternativa, descarga únicamente `certs/server.crt` y súbelo en **Custom
 Root CA Certificate** dentro de la conexión REST. Nunca subas `server.key`.
@@ -335,7 +341,7 @@ Configura el bloque con estos valores:
 
 ```text
 URL:
-https://209.50.245.140:8001/api/v1/impala/databases/default/tables/ventas/columns
+https://apiqd.andresgaibor.com/api/v1/impala/databases/default/tables/ventas/columns
 
 Method:
 GET
@@ -359,7 +365,7 @@ un mecanismo equivalente; el certificado autofirmado no es suficiente cuando
 ### 6.4 Subdominio en Cloudflare para Qlik Automate
 
 La configuración recomendada es publicar la API como
-`api.andresgaibor.com` detrás del proxy de Cloudflare. Qlik Automate verá el
+`apiqd.andresgaibor.com` detrás del proxy de Cloudflare. Qlik Automate verá el
 certificado público de Cloudflare y no tendrá que confiar en el certificado
 autofirmado del servidor.
 
@@ -369,7 +375,7 @@ En **DNS > Records** del dominio `andresgaibor.com`, crea:
 
 ```text
 Type: A
-Name: api
+Name: apiqd
 IPv4 address: 209.50.245.140
 Proxy status: Proxied (nube naranja)
 ```
@@ -380,12 +386,18 @@ En **SSL/TLS > Origin Server > Create Certificate**, crea un certificado de
 origen para:
 
 ```text
-api.andresgaibor.com
+apiqd.andresgaibor.com
 ```
 
 Guarda el certificado público como `/etc/nginx/ssl/cloudflare-origin.pem` y la
 clave privada como `/etc/nginx/ssl/cloudflare-origin.key`. La clave privada no
 debe versionarse ni compartirse.
+
+#### Configuración en el servidor sin Plesk/Apache
+
+Usa esta subsección solo si Nginx es quien ocupa directamente los puertos 80 y
+443. Si `ss -ltnp` muestra `apache2` en esos puertos, usa la sección 6.5 y no
+arranques un Nginx independiente.
 
 #### Configuración en el servidor
 
@@ -403,13 +415,13 @@ Crea el archivo `/etc/nginx/sites-available/qlik-api`:
 ```nginx
 server {
     listen 80;
-    server_name api.andresgaibor.com;
+    server_name apiqd.andresgaibor.com;
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl;
-    server_name api.andresgaibor.com;
+    server_name apiqd.andresgaibor.com;
 
     ssl_certificate /etc/nginx/ssl/cloudflare-origin.pem;
     ssl_certificate_key /etc/nginx/ssl/cloudflare-origin.key;
@@ -465,19 +477,76 @@ validación puede fallar.
 Verifica desde fuera del servidor:
 
 ```bash
-curl https://api.andresgaibor.com/health
+curl https://apiqd.andresgaibor.com/health
 curl -H 'X-API-Key: TU_API_KEY' \
-  https://api.andresgaibor.com/api/v1/impala/databases/default/tables/ventas/columns
+  https://apiqd.andresgaibor.com/api/v1/impala/databases/default/tables/ventas/columns
 ```
 
 En Qlik Automate, el bloque **Call URL** debe usar:
 
 ```text
-https://api.andresgaibor.com/api/v1/impala/databases/default/tables/ventas/columns
+https://apiqd.andresgaibor.com/api/v1/impala/databases/default/tables/ventas/columns
 ```
 
 El certificado de Cloudflare será validado normalmente, sin seleccionar ninguna
 opción para ignorar SSL.
+
+### 6.5 Servidor con Plesk y Apache en 80/443
+
+Si `ss -ltnp` muestra `apache2` ocupando los puertos `80` y `443`, no se debe
+arrancar un Nginx independiente en esos puertos. En ese caso, Apache/Plesk debe
+terminar TLS y hacer proxy hacia Uvicorn.
+
+Activa los módulos necesarios:
+
+```bash
+sudo a2enmod ssl proxy proxy_http headers
+```
+
+Crea `/etc/apache2/sites-available/apiqd.conf`:
+
+```apache
+<VirtualHost 209.50.245.140:80 *:80>
+    ServerName apiqd.andresgaibor.com
+    Redirect permanent / https://apiqd.andresgaibor.com/
+</VirtualHost>
+
+<VirtualHost 209.50.245.140:443 *:443>
+    ServerName apiqd.andresgaibor.com
+
+    SSLEngine on
+    SSLCertificateFile /etc/nginx/ssl/cloudflare-origin.pem
+    SSLCertificateKeyFile /etc/nginx/ssl/cloudflare-origin.key
+
+    ProxyPreserveHost On
+    ProxyPass / http://127.0.0.1:8001/
+    ProxyPassReverse / http://127.0.0.1:8001/
+    RequestHeader set X-Forwarded-Proto "https"
+    ProxyTimeout 120
+</VirtualHost>
+```
+
+Activa el sitio y recarga Apache:
+
+```bash
+sudo a2ensite apiqd.conf
+sudo apachectl configtest
+sudo systemctl reload apache2
+```
+
+Para probar el vhost localmente, el certificado de Cloudflare no será confiable
+para `curl`, por eso se usa `-k` solo en esta prueba directa al origen:
+
+```bash
+curl -k --resolve apiqd.andresgaibor.com:443:209.50.245.140 \
+  https://apiqd.andresgaibor.com/health
+```
+
+La prueba pública debe hacerse sin `-k` y pasar por Cloudflare:
+
+```bash
+curl https://apiqd.andresgaibor.com/health
+```
 
 ## 7. Mantener la API remota ejecutándose
 
@@ -525,8 +594,10 @@ sudo ufw allow 443/tcp
 sudo ufw enable
 ```
 
-Si elegiste la opción rápida sin reverse proxy, permite también el puerto de
-Uvicorn:
+#### Alternativa legacy: IP directa con certificado autofirmado
+
+Si no usas Cloudflare/Apache y elegiste la opción rápida sin reverse proxy,
+permite también el puerto de Uvicorn:
 
 ```bash
 sudo ufw allow 8001/tcp
@@ -548,10 +619,10 @@ sudo systemctl restart qlik-dataflows.service
 sudo systemctl status qlik-dataflows.service
 ```
 
-#### Instalación rápida actual en `/root/qlik_df_api`
+#### Instalación actual en `/root/qlik_df_api` con Apache/Cloudflare
 
-Si el proyecto está instalado como `root`, primero detén el Uvicorn que está en
-primer plano con `Ctrl+C`. Luego crea el servicio:
+Si el proyecto está instalado como `root`, primero detén cualquier Uvicorn
+manual que esté en primer plano con `Ctrl+C`. Luego crea el servicio:
 
 ```bash
 sudo nano /etc/systemd/system/qlik-dataflows.service
@@ -561,14 +632,14 @@ Usa este contenido:
 
 ```ini
 [Unit]
-Description=Qlik Dataflows Remote API HTTPS
+Description=Qlik Dataflows Remote API
 After=network.target
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/root/qlik_df_api
-ExecStart=/root/qlik_df_api/.venv/bin/uvicorn remote_server.main:app --host 0.0.0.0 --port 8001 --ssl-keyfile=/root/qlik_df_api/certs/server.key --ssl-certfile=/root/qlik_df_api/certs/server.crt
+ExecStart=/root/qlik_df_api/.venv/bin/uvicorn remote_server.main:app --host 127.0.0.1 --port 8001
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
@@ -597,12 +668,36 @@ sudo journalctl -u qlik-dataflows.service -f
 Comprueba que responde:
 
 ```bash
-curl -k https://209.50.245.140:8001/health
+curl http://127.0.0.1:8001/health
 ```
 
 Ejecutar la API como `root` es una solución rápida. Para una instalación
 permanente, crea un usuario dedicado y cambia `User`, `WorkingDirectory` y las
 rutas del servicio para no ejecutar Uvicorn con privilegios de administrador.
+
+### Actualizar el código y reiniciar el servicio
+
+Después de actualizar el código Python, no es necesario reiniciar Apache. Si
+también cambiaron las dependencias, instálalas primero:
+
+```bash
+cd /root/qlik_df_api
+.venv/bin/python -m pip install .
+```
+
+Reinicia Uvicorn y verifica su estado:
+
+```bash
+sudo systemctl restart qlik-dataflows.service
+sudo systemctl status qlik-dataflows.service
+curl http://127.0.0.1:8001/health
+```
+
+Para revisar errores en tiempo real:
+
+```bash
+sudo journalctl -u qlik-dataflows.service -f
+```
 
 ## 8. Ejecutar el scraping desde el Mac
 
@@ -656,17 +751,17 @@ La consulta requiere la misma API key:
 ```bash
 curl \
   -H "X-API-Key: $REMOTE_API_KEY" \
-  https://tu-dominio.example.com/api/v1/dataflows
+  https://apiqd.andresgaibor.com/api/v1/dataflows
 ```
 
 Filtros disponibles:
 
 ```bash
 curl -H "X-API-Key: $REMOTE_API_KEY" \
-  'https://tu-dominio.example.com/api/v1/dataflows?dataflow_name=Mi%20Dataflow'
+  'https://apiqd.andresgaibor.com/api/v1/dataflows?dataflow_name=Mi%20Dataflow'
 
 curl -H "X-API-Key: $REMOTE_API_KEY" \
-  'https://tu-dominio.example.com/api/v1/dataflows?dataflow_id=abc123'
+  'https://apiqd.andresgaibor.com/api/v1/dataflows?dataflow_id=abc123'
 ```
 
 El CSV también puede revisarse directamente en el servidor:

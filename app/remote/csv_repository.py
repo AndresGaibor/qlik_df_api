@@ -28,3 +28,10 @@ class CsvDataflowRepository:
             return []
         with self.path.open(newline="", encoding="utf-8") as source:
             return [DataflowRecord.model_validate(row) for row in csv.DictReader(source)]
+
+    def find_by_name(self, name: str) -> list[DataflowRecord]:
+        expected = name.strip().casefold()
+        return [
+            r for r in self.list_records()
+            if r.dataflow_name.strip().casefold() == expected
+        ]
