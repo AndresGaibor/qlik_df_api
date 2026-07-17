@@ -45,6 +45,7 @@ async def list_dataflows(
         "data": [
             {
                 "dataflow_id": r.dataflow_id,
+                "app_id": r.app_id,
                 "dataflow_name": r.dataflow_name,
                 "description": r.description,
             }

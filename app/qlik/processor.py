@@ -7,6 +7,7 @@ from app.remote.schemas import DataflowRecord
 def procesar_dataflow(path: Path) -> list[DataflowRecord]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     dataflow = payload.get("dataflow", {})
+    app_id = str(dataflow.get("context", {}).get("dataAppId", ""))
     graph = dataflow.get("graph", {})
     records: list[DataflowRecord] = []
 
@@ -22,6 +23,7 @@ def procesar_dataflow(path: Path) -> list[DataflowRecord]:
         records.append(
             DataflowRecord(
                 dataflow_id=str(dataflow.get("id", "")),
+                app_id=app_id,
                 dataflow_name=str(dataflow.get("name", "")),
                 description=str(dataflow.get("description", "")),
                 target_type=str(node.get("type", "target")),
@@ -38,6 +40,7 @@ def procesar_dataflow(path: Path) -> list[DataflowRecord]:
         records.append(
             DataflowRecord(
                 dataflow_id=str(dataflow.get("id", "")),
+                app_id=app_id,
                 dataflow_name=str(dataflow.get("name", "")),
                 description=str(dataflow.get("description", "")),
             )

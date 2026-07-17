@@ -9,6 +9,7 @@ def test_extracts_dataflow_and_target_fields(tmp_path) -> None:
             "id": "flow-1",
             "name": "Flujo 1",
             "description": "Descripcion",
+            "context": {"dataAppId": "app-1"},
             "graph": {
                 "nodes": [
                     {
@@ -39,6 +40,7 @@ def test_extracts_dataflow_and_target_fields(tmp_path) -> None:
     records = procesar_dataflow(path)
 
     assert records[0].dataflow_id == "flow-1"
+    assert records[0].app_id == "app-1"
     assert records[0].target_label == "FTP"
     assert records[0].filename == "/upload/file"
     assert records[0].extension == "parquet"

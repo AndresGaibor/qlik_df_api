@@ -13,6 +13,7 @@ def test_remote_server_replaces_csv_and_requires_api_key(tmp_path, monkeypatch) 
         "data": [
             {
                 "dataflow_id": "flow-1",
+                "app_id": "app-1",
                 "dataflow_name": "Flujo 1",
                 "description": "Descripcion",
             }
@@ -36,3 +37,4 @@ def test_remote_server_replaces_csv_and_requires_api_key(tmp_path, monkeypatch) 
     assert listed.json()["data"][0]["dataflow_id"] == "flow-1"
     assert by_name.status_code == 200
     assert by_name.json()["data"][0]["dataflow_name"] == "Flujo 1"
+    assert by_name.json()["data"][0]["app_id"] == "app-1"
