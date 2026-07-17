@@ -754,6 +754,49 @@ curl \
   https://apiqd.andresgaibor.com/api/v1/dataflows
 ```
 
+### Consultar un dataflow por nombre
+
+El endpoint `GET /api/v1/dataflows/name/{name}` devuelve el registro completo
+del dataflow en formato JSON. Requiere la misma API key y acepta nombres con
+espacios o underscores; los underscores se comparan como espacios.
+
+```bash
+curl -H "X-API-Key: $REMOTE_API_KEY" \
+  "https://apiqd.andresgaibor.com/api/v1/dataflows/name/BanColombia_Prueba_1"
+```
+
+Para nombres con espacios, usa `%20` o encierra la URL entre comillas:
+
+```bash
+curl -H "X-API-Key: $REMOTE_API_KEY" \
+  "https://apiqd.andresgaibor.com/api/v1/dataflows/name/Prueba%20de%20conexion%20S3"
+```
+
+La respuesta incluye dos identificadores diferentes:
+
+```json
+{
+  "data": [
+    {
+      "dataflow_id": "ee4e1413-e6ff-4139-842d-6df9ad58dfea",
+      "app_id": "f16387d7-63af-484f-b267-f3856540dbe6",
+      "dataflow_name": "BanColombia Prueba 1",
+      "description": "BanColombia Prueba 1",
+      "target_type": "target",
+      "target_id": "ba030a7a-bafd-4d48-b76f-6904933720d1",
+      "target_label": "Destino de la conexión 2",
+      "filename": "/upload/ventas_pruebas",
+      "extension": "csv",
+      "format": "txt",
+      "treat_as_relative": false
+    }
+  ]
+}
+```
+
+`dataflow_id` identifica el dataflow y `app_id` identifica la Data App que
+Qlik solicita en el campo **App Id**.
+
 Filtros disponibles:
 
 ```bash
